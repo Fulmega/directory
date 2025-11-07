@@ -396,7 +396,7 @@ function EntryDetailModal({ entry, onClose, onCopy }: EntryDetailModalProps) {
               className="flex items-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors duration-200 font-medium"
             >
               <Copy className="h-4 w-4" />
-              <span>Copiar contenido</span>
+              <span>Copiar Fulmega contenido</span>
             </button>
           </div>
         </div>
