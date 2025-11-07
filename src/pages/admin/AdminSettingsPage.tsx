@@ -1,0 +1,356 @@
+import { useEffect, useState } from 'react';
+import AdminLayout from '@/components/AdminLayout';
+import { supabase } from '@/lib/supabase';
+import { Settings as SettingsIcon, Globe, Lock, Bell, Database, Palette, Save, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface SystemConfig {
+  site_name: string;
+  site_description: string;
+  allow_registration: boolean;
+  require_email_verification: boolean;
+  email_notifications: boolean;
+  system_alerts: boolean;
+  theme: string;
+  primary_color: string;
+}
+
+export default function AdminSettingsPage() {
+  const [config, setConfig] = useState<SystemConfig>({
+    site_name: 'Fulmega.eu',
+    site_description: 'Directorio de Herramientas de IA y Recursos',
+    allow_registration: false,
+    require_email_verification: true,
+    email_notifications: true,
+    system_alerts: true,
+    theme: 'light',
+    primary_color: '#1E40AF',
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_config')
+        .select('*');
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const newConfig: any = { ...config };
+        data.forEach((item: any) => {
+          if (item.key && item.value !== null) {
+            newConfig[item.key] = item.value;
+          }
+        });
+        setConfig(newConfig);
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveSettings = async () => {
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id;
+
+      // Preparar los datos para upsert
+      const configEntries = Object.entries(config).map(([key, value]) => ({
+        key,
+        value,
+        updated_at: new Date().toISOString(),
+        updated_by: userId,
+      }));
+
+      // Upsert cada configuración
+      for (const entry of configEntries) {
+        const { error } = await (supabase.from('system_config') as any)
+          .upsert(entry, { onConflict: 'key' });
+
+        if (error) throw error;
+      }
+
+      setLastSaved(new Date());
+      toast.success('Configuración guardada', {
+        description: 'Los cambios se han guardado exitosamente en la base de datos.',
+      });
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast.error('Error al guardar', {
+        description: 'No se pudo guardar la configuración. Intenta nuevamente.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateConfig = (key: keyof SystemConfig, value: any) => {
+    setConfig(prev => ({ ...prev, [key]: value }));
+  };
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  return (
+    <AdminLayout>
+      <div>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold text-foreground">Configuración del Sistema</h1>
+          <button
+            onClick={saveSettings}
+            disabled={saving}
+            className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            <span>{saving ? 'Guardando...' : 'Guardar Cambios'}</span>
+          </button>
+        </div>
+
+        {lastSaved && (
+          <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-3">
+            <p className="text-sm text-green-800">
+              ✓ Última actualización: {lastSaved.toLocaleTimeString('es-ES')}
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* General Settings */}
+          <div className="bg-card rounded-lg shadow-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Globe className="h-5 w-5 text-blue-600" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Configuración General</h2>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Nombre del Sitio
+                </label>
+                <input
+                  type="text"
+                  value={config.site_name}
+                  onChange={(e) => updateConfig('site_name', e.target.value)}
+                  className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 dark:placeholder:text-slate-400"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Descripción
+                </label>
+                <textarea
+                  rows={3}
+                  value={config.site_description}
+                  onChange={(e) => updateConfig('site_description', e.target.value)}
+                  className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 dark:placeholder:text-slate-400"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Security Settings */}
+          <div className="bg-card rounded-lg shadow-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Lock className="h-5 w-5 text-purple-600" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Seguridad</h2>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-foreground">Registro de Usuarios</p>
+                  <p className="text-sm text-muted-foreground">Permitir nuevos registros</p>
+                </div>
+                <button
+                  onClick={() => updateConfig('allow_registration', !config.allow_registration)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    config.allow_registration ? 'bg-primary' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
+                      config.allow_registration ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-foreground">Verificación de Email</p>
+                  <p className="text-sm text-muted-foreground">Requerir verificación</p>
+                </div>
+                <button
+                  onClick={() => updateConfig('require_email_verification', !config.require_email_verification)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    config.require_email_verification ? 'bg-primary' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
+                      config.require_email_verification ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Notification Settings */}
+          <div className="bg-card rounded-lg shadow-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <Bell className="h-5 w-5 text-green-600" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Notificaciones</h2>
+            </div>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-foreground">Notificaciones Email</p>
+                  <p className="text-sm text-muted-foreground">Recibir actualizaciones por email</p>
+                </div>
+                <button
+                  onClick={() => updateConfig('email_notifications', !config.email_notifications)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    config.email_notifications ? 'bg-primary' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
+                      config.email_notifications ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-foreground">Alertas del Sistema</p>
+                  <p className="text-sm text-muted-foreground">Notificaciones de errores</p>
+                </div>
+                <button
+                  onClick={() => updateConfig('system_alerts', !config.system_alerts)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    config.system_alerts ? 'bg-primary' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
+                      config.system_alerts ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Database Settings */}
+          <div className="bg-card rounded-lg shadow-card p-6">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 bg-indigo-100 rounded-lg">
+                <Database className="h-5 w-5 text-indigo-600" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Base de Datos</h2>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-foreground mb-2">Estado de la Conexión</p>
+                <div className="flex items-center space-x-2">
+                  <div className="h-3 w-3 rounded-full bg-green-500"></div>
+                  <span className="text-sm text-muted-foreground">Conectado a Supabase</span>
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground mb-2">Estadísticas</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground">Tablas</p>
+                    <p className="text-lg font-bold text-foreground">9</p>
+                  </div>
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground">RLS Policies</p>
+                    <p className="text-lg font-bold text-foreground">Activas</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Appearance Settings */}
+          <div className="bg-card rounded-lg shadow-card p-6 lg:col-span-2">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <Palette className="h-5 w-5 text-orange-600" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Apariencia</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Tema
+                </label>
+                <select
+                  value={config.theme}
+                  onChange={(e) => updateConfig('theme', e.target.value)}
+                  className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500"
+                >
+                  <option value="light">Claro (Azul Profesional)</option>
+                  <option value="dark">Oscuro (Próximamente)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Color Principal
+                </label>
+                <div className="flex items-center space-x-2">
+                  <div
+                    className="w-10 h-10 rounded-lg border-2 border-border"
+                    style={{ backgroundColor: config.primary_color }}
+                  ></div>
+                  <input
+                    type="text"
+                    value={config.primary_color}
+                    onChange={(e) => updateConfig('primary_color', e.target.value)}
+                    className="flex-1 px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 dark:placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Info Box */}
+        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start space-x-3">
+            <SettingsIcon className="h-5 w-5 text-blue-600 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-blue-900">Configuración del Sistema</p>
+              <p className="text-sm text-blue-700 mt-1">
+                Los cambios realizados se guardarán en la base de datos al hacer clic en "Guardar Cambios".
+                Algunos cambios pueden requerir recargar la página para verse reflejados.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}

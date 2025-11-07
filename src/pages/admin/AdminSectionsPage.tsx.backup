@@ -1,0 +1,286 @@
+import { useEffect, useState } from 'react';
+import AdminLayout from '@/components/AdminLayout';
+import { supabase } from '@/lib/supabase';
+import type { Section, Category } from '@/types';
+import { Plus, Edit, Trash2, Save, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { sectionSchema } from '@/lib/validations';
+
+export default function AdminSectionsPage() {
+  const [sections, setSections] = useState<Section[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    category_id: '',
+    name: '',
+    slug: '',
+    description: '',
+  });
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [sectionsRes, categoriesRes] = await Promise.all([
+        supabase.from('sections').select('*').order('order_index'),
+        supabase.from('categories').select('*').order('order_index'),
+      ]);
+      
+      if (sectionsRes.data) setSections(sectionsRes.data);
+      if (categoriesRes.data) setCategories(categoriesRes.data);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validar datos del formulario
+    const validation = sectionSchema.safeParse(formData);
+    if (!validation.success) {
+      const firstError = validation.error.errors[0];
+      toast.error(firstError.message);
+      return;
+    }
+
+    try {
+      if (editingId) {
+        const updateData = {
+          category_id: formData.category_id,
+          name: formData.name,
+          slug: formData.slug,
+          description: formData.description,
+          updated_at: new Date().toISOString(),
+        };
+        const { error } = await (supabase.from('sections') as any)
+          .update(updateData)
+          .eq('id', editingId);
+
+        if (error) throw error;
+        toast.success('Sección actualizada exitosamente');
+      } else {
+        const insertData = {
+          category_id: formData.category_id,
+          name: formData.name,
+          slug: formData.slug,
+          description: formData.description,
+          order_index: sections.filter(s => s.category_id === formData.category_id).length,
+        };
+        const { error } = await (supabase.from('sections') as any).insert(insertData);
+
+        if (error) throw error;
+        toast.success('Sección creada exitosamente');
+      }
+
+      resetForm();
+      loadData();
+    } catch (error: any) {
+      console.error('Error saving section:', error);
+      toast.error('Error al guardar la sección: ' + error.message);
+    }
+  };
+
+  const deleteSection = async (id: string) => {
+    if (!confirm('¿Estás seguro? Esto también eliminará todas las entradas relacionadas.')) return;
+
+    try {
+      const { error } = await supabase.from('sections').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Sección eliminada exitosamente');
+      loadData();
+    } catch (error: any) {
+      console.error('Error deleting section:', error);
+      toast.error('Error al eliminar la sección: ' + error.message);
+    }
+  };
+
+  const startEdit = (section: Section) => {
+    setEditingId(section.id);
+    setFormData({
+      category_id: section.category_id,
+      name: section.name,
+      slug: section.slug,
+      description: section.description || '',
+    });
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({
+      category_id: '',
+      name: '',
+      slug: '',
+      description: '',
+    });
+  };
+
+  const getCategoryName = (categoryId: string) => {
+    return categories.find(c => c.id === categoryId)?.name || 'Sin categoría';
+  };
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  return (
+    <AdminLayout>
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 mb-6">Gestión de Secciones</h1>
+
+        {/* Form */}
+        <div className="bg-white rounded-lg shadow-card p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            {editingId ? 'Editar Sección' : 'Nueva Sección'}
+          </h2>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Categoría *
+                </label>
+                <select
+                  value={formData.category_id}
+                  onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Seleccionar categoría</option>
+                  {categories.map(cat => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nombre *
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Slug *
+                </label>
+                <input
+                  type="text"
+                  value={formData.slug}
+                  onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Descripción
+              </label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={3}
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                type="submit"
+                className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition"
+              >
+                <Save className="h-4 w-4" />
+                <span>{editingId ? 'Actualizar' : 'Crear'}</span>
+              </button>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="flex items-center space-x-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Cancelar</span>
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+
+        {/* Sections list */}
+        <div className="bg-white rounded-lg shadow-card overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Nombre
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Categoría
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Slug
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Orden
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {sections.map((section) => (
+                <tr key={section.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4">
+                    <span className="text-sm font-medium text-gray-900">{section.name}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-600">{getCategoryName(section.category_id)}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-600">{section.slug}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-600">{section.order_index}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button
+                      onClick={() => startEdit(section)}
+                      className="text-primary hover:text-primary-dark mr-3"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteSection(section.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}

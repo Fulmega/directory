@@ -1,0 +1,303 @@
+import { useEffect, useState } from 'react';
+import AdminLayout from '@/components/AdminLayout';
+import { supabase } from '@/lib/supabase';
+import type { Category } from '@/types';
+import { Plus, Edit, Trash2, Save, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { categorySchema } from '@/lib/validations';
+
+export default function AdminCategoriesPage() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    slug: '',
+    description: '',
+    icon: '',
+    color: '#1E40AF',
+  });
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    try {
+      const { data } = await supabase
+        .from('categories')
+        .select('*')
+        .order('order_index');
+      
+      if (data) setCategories(data);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validar datos del formulario
+    const validation = categorySchema.safeParse(formData);
+    if (!validation.success) {
+      const firstError = validation.error.errors[0];
+      toast.error(firstError.message);
+      return;
+    }
+
+    try {
+      if (editingId) {
+        // Update existing
+        const updateData = {
+          name: formData.name,
+          slug: formData.slug,
+          description: formData.description,
+          icon: formData.icon,
+          color: formData.color,
+          updated_at: new Date().toISOString(),
+        };
+        const { error } = await (supabase.from('categories') as any)
+          .update(updateData)
+          .eq('id', editingId);
+
+        if (error) throw error;
+        toast.success('Categoría actualizada exitosamente');
+      } else {
+        // Create new
+        const insertData = {
+          name: formData.name,
+          slug: formData.slug,
+          description: formData.description,
+          icon: formData.icon,
+          color: formData.color,
+          order_index: categories.length,
+        };
+        const { error } = await (supabase.from('categories') as any).insert(insertData);
+
+        if (error) throw error;
+        toast.success('Categoría creada exitosamente');
+      }
+
+      resetForm();
+      loadCategories();
+    } catch (error: any) {
+      console.error('Error saving category:', error);
+      toast.error('Error al guardar la categoría: ' + error.message);
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    if (!confirm('¿Estás seguro? Esto también eliminará todas las secciones y entradas relacionadas.')) return;
+
+    try {
+      const { error } = await supabase.from('categories').delete().eq('id', id);
+      if (error) throw error;
+      toast.success('Categoría eliminada exitosamente');
+      loadCategories();
+    } catch (error: any) {
+      console.error('Error deleting category:', error);
+      toast.error('Error al eliminar la categoría: ' + error.message);
+    }
+  };
+
+  const startEdit = (category: Category) => {
+    setEditingId(category.id);
+    setFormData({
+      name: category.name,
+      slug: category.slug,
+      description: category.description || '',
+      icon: category.icon || '',
+      color: category.color,
+    });
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({
+      name: '',
+      slug: '',
+      description: '',
+      icon: '',
+      color: '#1E40AF',
+    });
+  };
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  return (
+    <AdminLayout>
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 mb-6">Gestión de Categorías</h1>
+
+        {/* Form */}
+        <div className="bg-white rounded-lg shadow-card p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            {editingId ? 'Editar Categoría' : 'Nueva Categoría'}
+          </h2>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nombre *
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Slug *
+                </label>
+                <input
+                  type="text"
+                  value={formData.slug}
+                  onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
+                  required
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Icono
+                </label>
+                <input
+                  type="text"
+                  value={formData.icon}
+                  onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                  placeholder="brain, code, etc."
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Color
+                </label>
+                <input
+                  type="color"
+                  value={formData.color}
+                  onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                  className="w-full h-10 px-2 py-1 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Descripción
+              </label>
+              <textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={3}
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                type="submit"
+                className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition"
+              >
+                <Save className="h-4 w-4" />
+                <span>{editingId ? 'Actualizar' : 'Crear'}</span>
+              </button>
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="flex items-center space-x-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition"
+                >
+                  <X className="h-4 w-4" />
+                  <span>Cancelar</span>
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+
+        {/* Categories list */}
+        <div className="bg-white rounded-lg shadow-card overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Nombre
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Slug
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Color
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Orden
+                </th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {categories.map((category) => (
+                <tr key={category.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4">
+                    <div className="flex items-center space-x-2">
+                      {category.color && (
+                        <div
+                          className="w-4 h-4 rounded"
+                          style={{ backgroundColor: category.color }}
+                        />
+                      )}
+                      <span className="text-sm font-medium text-gray-900">{category.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-600">{category.slug}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-600">{category.color}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="text-sm text-gray-600">{category.order_index}</span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button
+                      onClick={() => startEdit(category)}
+                      className="text-primary hover:text-primary-dark mr-3"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteCategory(category.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </AdminLayout>
+  );
+}

@@ -1,0 +1,356 @@
+import { useEffect, useState } from 'react';
+import AdminLayout from '@/components/AdminLayout';
+import { supabase } from '@/lib/supabase';
+import { Users as UsersIcon, Mail, Shield, Calendar, Edit, Trash2, Search, X, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface Profile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+  avatar_url: string | null;
+  created_at: string;
+}
+
+export default function AdminUsersPage() {
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [editingUser, setEditingUser] = useState<Profile | null>(null);
+  const [deletingUser, setDeletingUser] = useState<Profile | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (data) setUsers(data);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateRole = async (userId: string, newRole: string) => {
+    setSaving(true);
+    try {
+      const { error } = await (supabase.from('profiles') as any)
+        .update({ role: newRole })
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      // Update local state
+      setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      setEditingUser(null);
+      toast.success('Rol actualizado exitosamente', {
+        description: `El rol del usuario ha sido cambiado a ${newRole}`,
+      });
+    } catch (error) {
+      console.error('Error updating role:', error);
+      toast.error('Error al actualizar el rol', {
+        description: 'No se pudo actualizar el rol del usuario. Intenta nuevamente.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+
+      if (error) throw error;
+
+      // Update local state
+      setUsers(users.filter(u => u.id !== userId));
+      setDeletingUser(null);
+      toast.success('Usuario eliminado exitosamente', {
+        description: 'El usuario ha sido eliminado del sistema.',
+      });
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      toast.error('Error al eliminar el usuario', {
+        description: 'No se pudo eliminar el usuario. Intenta nuevamente.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const getRoleBadge = (role: string) => {
+    const badges: Record<string, string> = {
+      superadmin: 'bg-red-100 text-red-700',
+      admin: 'bg-blue-100 text-blue-700',
+      viewer: 'bg-gray-100 text-gray-700',
+    };
+    return badges[role] || badges.viewer;
+  };
+
+  const filteredUsers = users.filter(user => 
+    user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (user.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) || false)
+  );
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
+  return (
+    <AdminLayout>
+      <div>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">Gestión de Usuarios</h1>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="bg-white rounded-lg shadow-card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Total Usuarios</p>
+                <p className="text-3xl font-bold text-gray-900">{users.length}</p>
+              </div>
+              <div className="p-3 rounded-lg bg-blue-500">
+                <UsersIcon className="h-6 w-6 text-white" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Administradores</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  {users.filter(u => u.role === 'superadmin' || u.role === 'admin').length}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-purple-500">
+                <Shield className="h-6 w-6 text-white" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Viewers</p>
+                <p className="text-3xl font-bold text-gray-900">
+                  {users.filter(u => u.role === 'viewer').length}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-gray-500">
+                <UsersIcon className="h-6 w-6 text-white" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="bg-white rounded-lg shadow-card p-4 mb-6">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar usuarios por email o nombre..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-10 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2"
+              >
+                <X className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <p className="mt-2 text-sm text-gray-600">
+              {filteredUsers.length} resultado{filteredUsers.length !== 1 ? 's' : ''} encontrado{filteredUsers.length !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+
+        {/* Users table */}
+        <div className="bg-white rounded-lg shadow-card overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Usuario
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Rol
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Fecha de Registro
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredUsers.map((user) => (
+                <tr key={user.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-white font-semibold">
+                        {user.full_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="ml-4">
+                        <div className="text-sm font-medium text-gray-900">
+                          {user.full_name || 'Sin nombre'}
+                        </div>
+                        <div className="text-sm text-gray-500">{user.id.slice(0, 8)}...</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center text-sm text-gray-900">
+                      <Mail className="h-4 w-4 mr-2 text-gray-400" />
+                      {user.email}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getRoleBadge(user.role)}`}>
+                      {user.role}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center text-sm text-gray-500">
+                      <Calendar className="h-4 w-4 mr-2" />
+                      {new Date(user.created_at).toLocaleDateString('es-ES')}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setEditingUser(user)}
+                        className="text-blue-600 hover:text-blue-900"
+                        title="Editar rol"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => setDeletingUser(user)}
+                        className="text-red-600 hover:text-red-900"
+                        title="Eliminar usuario"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {filteredUsers.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-gray-500">
+                {searchQuery ? 'No se encontraron usuarios' : 'No hay usuarios registrados'}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Edit Role Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Editar Rol de Usuario</h3>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 mb-2">Usuario: <span className="font-semibold">{editingUser.email}</span></p>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Seleccionar nuevo rol:
+              </label>
+              <select
+                defaultValue={editingUser.role}
+                onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="viewer">Viewer</option>
+                <option value="admin">Admin</option>
+                <option value="superadmin">SuperAdmin</option>
+              </select>
+            </div>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setEditingUser(null)}
+                disabled={saving}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleUpdateRole(editingUser.id, editingUser.role)}
+                disabled={saving}
+                className="flex items-center space-x-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                <span>{saving ? 'Guardando...' : 'Guardar'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Confirmar Eliminación</h3>
+            <p className="text-gray-600 mb-6">
+              ¿Estás seguro de que deseas eliminar al usuario <span className="font-semibold">{deletingUser.email}</span>?
+              Esta acción no se puede deshacer.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setDeletingUser(null)}
+                disabled={saving}
+                className="px-4 py-2 text-gray-700 hover:text-gray-900"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleDeleteUser(deletingUser.id)}
+                disabled={saving}
+                className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                <span>{saving ? 'Eliminando...' : 'Eliminar'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </AdminLayout>
+  );
+}
